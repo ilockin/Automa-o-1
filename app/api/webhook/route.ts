@@ -25,8 +25,28 @@ export async function GET(req: NextRequest) {
   const mode = sp.get("hub.mode");
   const token = sp.get("hub.verify_token");
   const challenge = sp.get("hub.challenge");
+  const expected = env.webhookVerifyToken();
+  const ok = mode === "subscribe" && token === expected;
 
-  if (mode === "subscribe" && token === env.webhookVerifyToken()) {
+  // Registro de diagnóstico: guarda toda tentativa de verificação para depuração.
+  try {
+    const db = getSupabaseAdmin();
+    await db.from("events").insert({
+      type: "webhook_verify",
+      raw: {
+        mode,
+        challenge,
+        token_matches: token === expected,
+        token_len: token ? token.length : 0,
+        result: ok ? 200 : 403,
+        at: new Date().toISOString(),
+      },
+    });
+  } catch (e) {
+    console.error("Falha ao registrar verificação:", e);
+  }
+
+  if (ok) {
     return new NextResponse(challenge ?? "", { status: 200 });
   }
   return new NextResponse("Forbidden", { status: 403 });
